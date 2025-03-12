@@ -43,7 +43,10 @@ export default function Home() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const options = { mimeType: "audio/webm;codecs=opus" };
+      // Vérifier si le type MIME "audio/webm;codecs=opus" est supporté, sinon laisser par défaut.
+      const options = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? { mimeType: "audio/webm;codecs=opus" }
+        : {};
       const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
@@ -104,7 +107,6 @@ export default function Home() {
       setTranscription(data.transcription);
       setLlmResponse(data.llmResponse);
       setShowResults(true);
-
       setSelectedAudio(null);
     } catch (error) {
       console.error("Erreur lors de l'analyse de l'audio:", error);
