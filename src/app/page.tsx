@@ -43,10 +43,13 @@ export default function Home() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Vérifier si le type MIME "audio/webm;codecs=opus" est supporté, sinon laisser par défaut.
-      const options = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? { mimeType: "audio/webm;codecs=opus" }
-        : {};
+      // Choix du type MIME supporté : on privilégie "audio/webm;codecs=opus", sinon "audio/mp4"
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/mp4")
+          ? "audio/mp4"
+          : "";
+      const options = mimeType ? { mimeType } : {};
       const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
@@ -54,8 +57,11 @@ export default function Home() {
         chunksRef.current.push(e.data);
       };
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(chunksRef.current, { type: "audio/webm;codecs=opus" });
-        const audioFile = new File([audioBlob], "recording.webm", { type: "audio/webm" });
+        // Utiliser le type MIME utilisé par le recorder si disponible
+        const actualMimeType = mediaRecorder.mimeType || mimeType || "audio/webm";
+        const extension = actualMimeType.includes("mp4") ? "mp4" : "webm";
+        const audioBlob = new Blob(chunksRef.current, { type: actualMimeType });
+        const audioFile = new File([audioBlob], `recording.${extension}`, { type: actualMimeType });
         setSelectedAudio(audioFile);
         setTranscription("");
         setLlmResponse("");
@@ -67,6 +73,7 @@ export default function Home() {
       console.error("Error starting recording:", error);
     }
   };
+  
 
   const stopRecording = () => {
     if (mediaRecorderRef.current) {
