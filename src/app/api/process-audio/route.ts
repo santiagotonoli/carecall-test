@@ -10,7 +10,7 @@ const openai = new OpenAI({
 // Nouvelle fonction transcribeAudio utilisant un appel REST à l&apos;API Azure Speech
 async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   // Sauvegarder le buffer dans un fichier temporaire
-  const tempFilePath = path.join(process.cwd(), 'temp_audio.wav');
+  const tempFilePath = path.join('/tmp', 'temp_audio.wav');
   fs.writeFileSync(tempFilePath, audioBuffer);
 
   const subscriptionKey = process.env.AZURE_SPEECH_KEY;
