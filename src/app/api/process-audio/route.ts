@@ -26,7 +26,7 @@ async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
-        'Ocp-Apim-Subscription-Key': subscriptionKey,
+        'Ocp-Apim-Subscription-Key': subscriptionKey || '',
         'Content-Type': 'audio/wav; codec=audio/pcm; samplerate=16000'
       },
       body: audioData
