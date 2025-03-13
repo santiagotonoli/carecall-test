@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "@ffmpeg-installer/linux-x64": "^4.1.0",
     "@types/fluent-ffmpeg": "^2.1.27",
     "ffmpeg-static": "^5.2.0",
     "fluent-ffmpeg": "^2.1.3",
