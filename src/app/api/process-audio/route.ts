@@ -13,6 +13,7 @@ async function getFfmpegBinaryPath(): Promise<string> {
 
 async function setFfmpegPath(): Promise<void> {
   const ffmpegBinaryPath = await getFfmpegBinaryPath();
+  console.log("Chemin du binaire ffmpeg:", ffmpegBinaryPath);
   ffmpeg.setFfmpegPath(ffmpegBinaryPath);
 }
 
