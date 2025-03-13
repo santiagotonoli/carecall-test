@@ -4,7 +4,17 @@ import OpenAI from 'openai';
 import path from 'path';
 import fs from 'fs';
 import ffmpeg from 'fluent-ffmpeg';
-import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
+
+// Utilise systématiquement @ffmpeg-installer/ffmpeg pour obtenir le binaire
+async function getFfmpegBinaryPath(): Promise<string> {
+  const mod = await import('@' + 'ffmpeg-installer/ffmpeg');
+  return mod.default?.path || mod.path;
+}
+
+async function setFfmpegPath(): Promise<void> {
+  const ffmpegBinaryPath = await getFfmpegBinaryPath();
+  ffmpeg.setFfmpegPath(ffmpegBinaryPath);
+}
 
 // Initialisation du client OpenAI
 const openai = new OpenAI({
@@ -16,14 +26,10 @@ const speechConfig = sdk.SpeechConfig.fromSubscription(
   process.env.AZURE_SPEECH_KEY!,
   process.env.AZURE_SPEECH_REGION!
 );
-speechConfig.speechRecognitionLanguage = 'fr-FR';  
+speechConfig.speechRecognitionLanguage = 'fr-FR';
 
-/**
- * Convertit un fichier audio en WAV PCM 16kHz mono en utilisant ffmpeg.
- */
 async function convertToWavPCM16k(inputPath: string, outputPath: string): Promise<void> {
-  const ffmpegBinaryPath = ffmpegInstaller.path;
-  ffmpeg.setFfmpegPath(ffmpegBinaryPath);
+  await setFfmpegPath();
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       .outputOptions([
@@ -38,23 +44,21 @@ async function convertToWavPCM16k(inputPath: string, outputPath: string): Promis
   });
 }
 
-/**
- * Convertit le fichier audio reçu (en Buffer) en WAV PCM 16kHz, puis utilise le SDK Azure Speech pour obtenir la transcription.
- */
 async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
-  // Sauvegarde dans /tmp (accessible en écriture sur Vercel)
+  // Sauvegarder le fichier audio d'origine dans /tmp (en écriture sur Vercel)
   const inputPath = path.join('/tmp', 'input_audio');
   fs.writeFileSync(inputPath, audioBuffer);
 
+  // Chemin du fichier converti
   const outputPath = path.join('/tmp', 'output_audio.wav');
 
   // Conversion avec ffmpeg
   await convertToWavPCM16k(inputPath, outputPath);
 
-  // Lecture du fichier WAV converti
+  // Lire le fichier WAV converti
   const wavBuffer = fs.readFileSync(outputPath);
 
-  // Nettoyage des fichiers temporaires
+  // Nettoyer : supprimer les fichiers temporaires
   fs.unlinkSync(inputPath);
   fs.unlinkSync(outputPath);
 
@@ -79,9 +83,6 @@ async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   });
 }
 
-/**
- * Envoie la transcription et l'instruction à OpenAI pour obtenir la réponse du LLM.
- */
 async function getLLMResponse(transcription: string, prompt: string): Promise<string> {
   const completion = await openai.chat.completions.create({
     model: "gpt-4",
@@ -101,9 +102,6 @@ async function getLLMResponse(transcription: string, prompt: string): Promise<st
   return completion.choices[0].message.content || "Désolé, je n'ai pas pu générer de réponse.";
 }
 
-/**
- * Fonction API POST : reçoit un fichier audio et une instruction, convertit l'audio et renvoie la transcription et la réponse IA.
- */
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
