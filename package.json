@@ -32,5 +32,8 @@
     "eslint-config-next": "15.2.2",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "optionalDependencies": {
+    "@ffmpeg-installer/linux-x64": "^4.1.0"
   }
 }
