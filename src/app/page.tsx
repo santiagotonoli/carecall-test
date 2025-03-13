@@ -4,13 +4,6 @@ import { useDropzone } from "react-dropzone";
 import { FaMicrophone, FaStop, FaFileAudio, FaTrash, FaTimes } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 
-// Importation du module @ffmpeg/ffmpeg en contournant les types
-import * as FFmpegModule from "@ffmpeg/ffmpeg";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const { createFFmpeg, fetchFile } = FFmpegModule as any;
-
-const ffmpeg = createFFmpeg({ log: true });
-
 export default function Home() {
   const [prompt, setPrompt] = useState("");
   const [transcription, setTranscription] = useState("");
@@ -25,29 +18,7 @@ export default function Home() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  // Charge FFmpeg WASM s'il n'est pas déjà chargé
-  const loadFFmpeg = async () => {
-    if (!ffmpeg.isLoaded()) {
-      await ffmpeg.load();
-    }
-  };
-
-  // Fonction de conversion du fichier audio en WAV PCM 16kHz mono
-  const convertToWav = async (file: File): Promise<File> => {
-    await loadFFmpeg();
-    // Écrire le fichier d'entrée dans l'espace de fichiers virtuel de FFmpeg
-    ffmpeg.FS("writeFile", "input", await fetchFile(file));
-    // Exécuter la commande de conversion
-    await ffmpeg.run("-i", "input", "-ar", "16000", "-ac", "1", "-f", "wav", "-acodec", "pcm_s16le", "output.wav");
-    // Lire le fichier converti
-    const data = ffmpeg.FS("readFile", "output.wav");
-    // Supprimer les fichiers temporaires de l'espace virtuel
-    ffmpeg.FS("unlink", "input");
-    ffmpeg.FS("unlink", "output.wav");
-    // Créer un nouvel objet File pour le fichier WAV converti
-    return new File([data.buffer], "output.wav", { type: "audio/wav" });
-  };
-
+  // Utilisation de useDropzone pour récupérer un fichier audio
   const { getRootProps, getInputProps } = useDropzone({
     accept: { "audio/*": [".mp3", ".wav", ".m4a"] },
     onDrop: async (acceptedFiles: File[]) => {
@@ -65,7 +36,7 @@ export default function Home() {
         setTranscription("");
         setLlmResponse("");
       }
-    }
+    },
   });
 
   // Création d'une URL pour l'aperçu de l'audio
@@ -78,6 +49,35 @@ export default function Home() {
       setAudioUrl("");
     }
   }, [selectedAudio]);
+
+  // Fonction qui charge FFmpeg WASM dynamiquement (exécuté uniquement côté client)
+  const loadFFmpeg = async () => {
+    // Import dynamique pour éviter l'import statique durant le build/prérendu
+    const ffmpegModule = await import("@ffmpeg/ffmpeg");
+    // Utilisation de 'as any' pour contourner les problèmes de typage
+    const { createFFmpeg, fetchFile } = ffmpegModule as any;
+    const ffmpeg = createFFmpeg({ log: true });
+    if (!ffmpeg.isLoaded()) {
+      await ffmpeg.load();
+    }
+    return { ffmpeg, fetchFile };
+  };
+
+  // Fonction pour convertir un fichier audio en WAV PCM 16kHz mono
+  const convertToWav = async (file: File): Promise<File> => {
+    const { ffmpeg, fetchFile } = await loadFFmpeg();
+    // Écrire le fichier d'entrée dans l'espace de fichiers virtuel de FFmpeg
+    ffmpeg.FS("writeFile", "input", await fetchFile(file));
+    // Exécuter la commande de conversion
+    await ffmpeg.run("-i", "input", "-ar", "16000", "-ac", "1", "-f", "wav", "-acodec", "pcm_s16le", "output.wav");
+    // Lire le fichier converti
+    const data = ffmpeg.FS("readFile", "output.wav");
+    // Optionnel : supprimer les fichiers de l'espace virtuel
+    ffmpeg.FS("unlink", "input");
+    ffmpeg.FS("unlink", "output.wav");
+    // Créer un nouvel objet File pour le fichier WAV converti
+    return new File([data.buffer], "output.wav", { type: "audio/wav" });
+  };
 
   const startRecording = async () => {
     try {
@@ -209,7 +209,7 @@ export default function Home() {
           </motion.div>
         ) : (
           <>
-            {/* Interface d'analyse et d'upload/enregistrement */}
+            {/* Interface d&apos;analyse et d&apos;upload/enregistrement */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-2 mb-8">
               <label htmlFor="prompt" className="block text-lg font-medium text-gray-300">
                 Quelle instruction d&apos;analyse souhaitez-vous&nbsp;?
@@ -240,7 +240,7 @@ export default function Home() {
               </button>
             </motion.div>
 
-            {/* Zone d'interaction selon l'onglet */}
+            {/* Zone d&apos;interaction selon l&apos;onglet */}
             <AnimatePresence mode="wait">
               <motion.div key={activeTab} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
                 {selectedAudio ? (
