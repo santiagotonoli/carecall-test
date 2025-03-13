@@ -3,11 +3,22 @@ import * as sdk from "microsoft-cognitiveservices-speech-sdk";
 import OpenAI from 'openai';
 import path from 'path';
 import fs from 'fs';
-import ffmpegPath from '@ffmpeg-installer/ffmpeg';
 import ffmpeg from 'fluent-ffmpeg';
 
-// Configurer ffmpeg avec le chemin fourni par ffmpeg-static
-ffmpeg.setFfmpegPath(ffmpegPath.path || '');
+let ffmpegBinaryPath: string;
+try {
+  if (process.platform === 'linux') {
+    // En production sur Vercel, la plateforme est Linux
+    ffmpegBinaryPath = (await import('@ffmpeg-installer/linux-x64')).path;
+  } else {
+    ffmpegBinaryPath = (await import('@ffmpeg-installer/ffmpeg')).path;
+  }
+} catch (err) {
+  console.error('Failed to load ffmpeg binary path:', err);
+  throw err;
+}
+
+ffmpeg.setFfmpegPath(ffmpegBinaryPath);
 
 // Initialisation du client OpenAI
 const openai = new OpenAI({
