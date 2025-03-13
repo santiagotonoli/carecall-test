@@ -23,22 +23,10 @@ speechConfig.speechRecognitionLanguage = 'fr-FR';
  * Sinon, on utilise @ffmpeg-installer/ffmpeg.
  */
 async function getFfmpegBinaryPath(): Promise<string> {
-    if (process.platform === 'linux') {
-      try {
-        // Import dynamique du module linux-x64
-        const linuxModule = await import('@ffmpeg-installer/linux-x64');
-        return linuxModule.default?.path || linuxModule.path;
-      } catch (err) {
-        // En cas d'échec, utilisation du module par défault
-        console.error('On est en environement Mac:', err);
-        const fallbackModule = await import('@ffmpeg-installer/ffmpeg');
-        return fallbackModule.default?.path || fallbackModule.path;
-      }
-    } else {
-      const mod = await import('@ffmpeg-installer/ffmpeg');
-      return mod.default?.path || mod.path;
-    }
+    const mod = await import('@' + 'ffmpeg-installer/ffmpeg');
+    return mod.default?.path || mod.path;
   }
+  
   
 
 /**
