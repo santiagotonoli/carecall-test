@@ -55,6 +55,7 @@ export default function Home() {
     // Import dynamique pour éviter l'import statique durant le build/prérendu
     const ffmpegModule = await import("@ffmpeg/ffmpeg");
     // Utilisation de 'as any' pour contourner les problèmes de typage
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { createFFmpeg, fetchFile } = ffmpegModule as any;
     const ffmpeg = createFFmpeg({ log: true });
     if (!ffmpeg.isLoaded()) {
