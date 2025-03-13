@@ -1,0 +1,8 @@
+{
+    "functions": {
+      "src/app/api/process-audio/route.ts": {
+        "includeFiles": "node_modules/@ffmpeg-installer/linux-x64/**/*"
+      }
+    }
+  }
+  
