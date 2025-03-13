@@ -1,24 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as sdk from "microsoft-cognitiveservices-speech-sdk";
+import * as sdk from 'microsoft-cognitiveservices-speech-sdk';
 import OpenAI from 'openai';
 import path from 'path';
 import fs from 'fs';
 import ffmpeg from 'fluent-ffmpeg';
-
-let ffmpegBinaryPath: string;
-try {
-  if (process.platform === 'linux') {
-    // En production sur Vercel, la plateforme est Linux
-    ffmpegBinaryPath = (await import('@ffmpeg-installer/linux-x64')).path;
-  } else {
-    ffmpegBinaryPath = (await import('@ffmpeg-installer/ffmpeg')).path;
-  }
-} catch (err) {
-  console.error('Failed to load ffmpeg binary path:', err);
-  throw err;
-}
-
-ffmpeg.setFfmpegPath(ffmpegBinaryPath);
 
 // Initialisation du client OpenAI
 const openai = new OpenAI({
@@ -30,17 +15,41 @@ const speechConfig = sdk.SpeechConfig.fromSubscription(
   process.env.AZURE_SPEECH_KEY!,
   process.env.AZURE_SPEECH_REGION!
 );
-speechConfig.speechRecognitionLanguage = "fr-FR";
+speechConfig.speechRecognitionLanguage = 'fr-FR';
 
-// Fonction pour convertir un fichier audio en WAV PCM 16kHz mono
+/**
+ * Charge dynamiquement le chemin du binaire ffmpeg en fonction de la plateforme.
+ * Sur Linux (en production sur Vercel) on tente d'importer @ffmpeg-installer/linux-x64.
+ * Sinon, on utilise @ffmpeg-installer/ffmpeg.
+ */
+async function getFfmpegBinaryPath(): Promise<string> {
+  if (process.platform === 'linux') {
+    try {
+      const mod = await import('@ffmpeg-installer/linux-x64');
+      return mod.default?.path || mod.path;
+    } catch (err) {
+      console.error('Failed to load ffmpeg binary path:', err);
+      throw err;
+    }
+  } else {
+    const mod = await import('@ffmpeg-installer/ffmpeg');
+    return mod.default?.path || mod.path;
+  }
+}
+
+/**
+ * Convertit un fichier audio en WAV PCM 16kHz mono en utilisant ffmpeg.
+ */
 async function convertToWavPCM16k(inputPath: string, outputPath: string): Promise<void> {
+  const ffmpegBinaryPath = await getFfmpegBinaryPath();
+  ffmpeg.setFfmpegPath(ffmpegBinaryPath);
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       .outputOptions([
-        '-ar 16000',            // Fréquence d'échantillonnage à 16 kHz
-        '-ac 1',                // Audio mono
-        '-f wav',               // Format WAV
-        '-acodec pcm_s16le'     // Codec PCM signé 16 bits little-endian
+        '-ar 16000',        // Échantillonnage à 16 kHz
+        '-ac 1',            // Audio mono
+        '-f wav',           // Format WAV
+        '-acodec pcm_s16le' // Codec PCM signé 16 bits little-endian
       ])
       .on('end', () => resolve())
       .on('error', (err: unknown) => reject(err))
@@ -48,21 +57,23 @@ async function convertToWavPCM16k(inputPath: string, outputPath: string): Promis
   });
 }
 
+/**
+ * Convertit le fichier audio reçu (en Buffer) en WAV PCM 16kHz, puis utilise le SDK Azure Speech pour obtenir la transcription.
+ */
 async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
-  // Sauvegarder le fichier audio d'origine dans le répertoire temporaire /tmp
+  // Sauvegarde dans /tmp (accessible en écriture sur Vercel)
   const inputPath = path.join('/tmp', 'input_audio');
   fs.writeFileSync(inputPath, audioBuffer);
 
-  // Définir le chemin du fichier converti dans /tmp
   const outputPath = path.join('/tmp', 'output_audio.wav');
 
   // Conversion avec ffmpeg
   await convertToWavPCM16k(inputPath, outputPath);
 
-  // Lire le fichier WAV converti
+  // Lecture du fichier WAV converti
   const wavBuffer = fs.readFileSync(outputPath);
 
-  // Nettoyer : supprimer les fichiers temporaires
+  // Nettoyage des fichiers temporaires
   fs.unlinkSync(inputPath);
   fs.unlinkSync(outputPath);
 
@@ -87,6 +98,9 @@ async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   });
 }
 
+/**
+ * Envoie la transcription et l'instruction à OpenAI pour obtenir la réponse du LLM.
+ */
 async function getLLMResponse(transcription: string, prompt: string): Promise<string> {
   const completion = await openai.chat.completions.create({
     model: "gpt-4",
@@ -106,6 +120,9 @@ async function getLLMResponse(transcription: string, prompt: string): Promise<st
   return completion.choices[0].message.content || "Désolé, je n'ai pas pu générer de réponse.";
 }
 
+/**
+ * Fonction API POST : reçoit un fichier audio et une instruction, convertit l'audio et renvoie la transcription et la réponse IA.
+ */
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
