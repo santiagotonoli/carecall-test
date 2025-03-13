@@ -4,6 +4,7 @@ import OpenAI from 'openai';
 import path from 'path';
 import fs from 'fs';
 import ffmpeg from 'fluent-ffmpeg';
+import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 
 // Initialisation du client OpenAI
 const openai = new OpenAI({
@@ -15,25 +16,13 @@ const speechConfig = sdk.SpeechConfig.fromSubscription(
   process.env.AZURE_SPEECH_KEY!,
   process.env.AZURE_SPEECH_REGION!
 );
-speechConfig.speechRecognitionLanguage = 'fr-FR';
-
-/**
- * Charge dynamiquement le chemin du binaire ffmpeg en fonction de la plateforme.
- * Sur Linux (en production sur Vercel) on tente d'importer @ffmpeg-installer/linux-x64.
- * Sinon, on utilise @ffmpeg-installer/ffmpeg.
- */
-async function getFfmpegBinaryPath(): Promise<string> {
-    const mod = await import('@' + 'ffmpeg-installer/ffmpeg');
-    return mod.default?.path || mod.path;
-  }
-  
-  
+speechConfig.speechRecognitionLanguage = 'fr-FR';  
 
 /**
  * Convertit un fichier audio en WAV PCM 16kHz mono en utilisant ffmpeg.
  */
 async function convertToWavPCM16k(inputPath: string, outputPath: string): Promise<void> {
-  const ffmpegBinaryPath = await getFfmpegBinaryPath();
+  const ffmpegBinaryPath = ffmpegInstaller.path;
   ffmpeg.setFfmpegPath(ffmpegBinaryPath);
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
