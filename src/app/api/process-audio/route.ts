@@ -3,11 +3,11 @@ import * as sdk from "microsoft-cognitiveservices-speech-sdk";
 import OpenAI from 'openai';
 import path from 'path';
 import fs from 'fs';
-import ffmpegPath from 'ffmpeg-static';
+import ffmpegPath from '@ffmpeg-installer/ffmpeg';
 import ffmpeg from 'fluent-ffmpeg';
 
 // Configurer ffmpeg avec le chemin fourni par ffmpeg-static
-ffmpeg.setFfmpegPath(ffmpegPath || '');
+ffmpeg.setFfmpegPath(ffmpegPath.path || '');
 
 // Initialisation du client OpenAI
 const openai = new OpenAI({
