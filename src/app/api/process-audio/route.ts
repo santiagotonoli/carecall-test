@@ -14,29 +14,37 @@ const speechConfig = sdk.SpeechConfig.fromSubscription(
 );
 speechConfig.speechRecognitionLanguage = "fr-FR";
 
+/**
+ * Transcrit le fichier WAV envoyé (qui doit être valide, avec un header RIFF)
+ */
 async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   return new Promise((resolve, reject) => {
-    // On utilise le fichier WAV envoyé (déjà converti côté client)
-    const audioConfig = sdk.AudioConfig.fromWavFileInput(audioBuffer);
-    const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
-
-    recognizer.recognizeOnceAsync(
-      result => {
-        if (result.reason === sdk.ResultReason.RecognizedSpeech) {
-          resolve(result.text.trim());
-        } else {
-          reject(new Error(result.errorDetails || "La reconnaissance a échoué."));
+    try {
+      const audioConfig = sdk.AudioConfig.fromWavFileInput(audioBuffer);
+      const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
+      recognizer.recognizeOnceAsync(
+        result => {
+          if (result.reason === sdk.ResultReason.RecognizedSpeech) {
+            resolve(result.text.trim());
+          } else {
+            reject(new Error(result.errorDetails || "La reconnaissance a échoué."));
+          }
+          recognizer.close();
+        },
+        error => {
+          reject(error);
+          recognizer.close();
         }
-        recognizer.close();
-      },
-      error => {
-        reject(error);
-        recognizer.close();
-      }
-    );
+      );
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 
+/**
+ * Envoie la transcription et le prompt à OpenAI pour générer la réponse IA
+ */
 async function getLLMResponse(transcription: string, prompt: string): Promise<string> {
   const completion = await openai.chat.completions.create({
     model: "gpt-4",
@@ -55,6 +63,10 @@ async function getLLMResponse(transcription: string, prompt: string): Promise<st
   return completion.choices[0].message.content || "Désolé, je n'ai pas pu générer de réponse.";
 }
 
+/**
+ * Handler POST : reçoit un fichier audio (WAV) et un prompt,
+ * transcrit l'audio avec Azure Speech et génère une réponse avec OpenAI.
+ */
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -65,16 +77,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Aucun fichier audio fourni" }, { status: 400 });
     }
 
-    // Conversion du fichier audio en Buffer (le fichier doit être en WAV)
+    // Convertir le fichier en Buffer
     const buffer = Buffer.from(await audioFile.arrayBuffer());
 
-    // Obtenir la transcription via Azure Speech
+    // ATTENTION : ce backend s'attend à recevoir un fichier WAV valide (avec header RIFF)
     const transcription = await transcribeAudio(buffer);
-
-    // Obtenir la réponse IA via OpenAI
     const llmResponse = await getLLMResponse(transcription, prompt);
 
-    return NextResponse.json({ transcription, llmResponse });
+    return NextResponse.json({
+      transcription,
+      llmResponse,
+    });
   } catch (error) {
     console.error("Erreur lors du traitement:", error);
     return NextResponse.json({ error: "Erreur lors du traitement de la requête" }, { status: 500 });
