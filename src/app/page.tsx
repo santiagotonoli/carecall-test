@@ -4,6 +4,13 @@ import { useDropzone } from "react-dropzone";
 import { FaMicrophone, FaStop, FaFileAudio, FaTrash, FaTimes } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 
+// Importation du module @ffmpeg/ffmpeg en contournant les types
+import * as FFmpegModule from "@ffmpeg/ffmpeg";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const { createFFmpeg, fetchFile } = FFmpegModule as any;
+
+const ffmpeg = createFFmpeg({ log: true });
+
 export default function Home() {
   const [prompt, setPrompt] = useState("");
   const [transcription, setTranscription] = useState("");
@@ -18,11 +25,43 @@ export default function Home() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
+  // Charge FFmpeg WASM s'il n'est pas déjà chargé
+  const loadFFmpeg = async () => {
+    if (!ffmpeg.isLoaded()) {
+      await ffmpeg.load();
+    }
+  };
+
+  // Fonction de conversion du fichier audio en WAV PCM 16kHz mono
+  const convertToWav = async (file: File): Promise<File> => {
+    await loadFFmpeg();
+    // Écrire le fichier d'entrée dans l'espace de fichiers virtuel de FFmpeg
+    ffmpeg.FS("writeFile", "input", await fetchFile(file));
+    // Exécuter la commande de conversion
+    await ffmpeg.run("-i", "input", "-ar", "16000", "-ac", "1", "-f", "wav", "-acodec", "pcm_s16le", "output.wav");
+    // Lire le fichier converti
+    const data = ffmpeg.FS("readFile", "output.wav");
+    // Supprimer les fichiers temporaires de l'espace virtuel
+    ffmpeg.FS("unlink", "input");
+    ffmpeg.FS("unlink", "output.wav");
+    // Créer un nouvel objet File pour le fichier WAV converti
+    return new File([data.buffer], "output.wav", { type: "audio/wav" });
+  };
+
   const { getRootProps, getInputProps } = useDropzone({
-    accept: { 'audio/*': ['.mp3', '.wav', '.m4a'] },
-    onDrop: (acceptedFiles: File[]) => {
+    accept: { "audio/*": [".mp3", ".wav", ".m4a"] },
+    onDrop: async (acceptedFiles: File[]) => {
       if (acceptedFiles.length > 0) {
-        setSelectedAudio(acceptedFiles[0]);
+        let file = acceptedFiles[0];
+        // Si le fichier n'est pas déjà en WAV, le convertir
+        if (!file.name.toLowerCase().endsWith(".wav")) {
+          try {
+            file = await convertToWav(file);
+          } catch (error) {
+            console.error("Erreur lors de la conversion :", error);
+          }
+        }
+        setSelectedAudio(file);
         setTranscription("");
         setLlmResponse("");
       }
@@ -43,7 +82,6 @@ export default function Home() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Choix du type MIME supporté : on privilégie "audio/webm;codecs=opus", sinon "audio/mp4"
       const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"
         : MediaRecorder.isTypeSupported("audio/mp4")
@@ -56,13 +94,20 @@ export default function Home() {
       mediaRecorder.ondataavailable = (e) => {
         chunksRef.current.push(e.data);
       };
-      mediaRecorder.onstop = () => {
-        // Utiliser le type MIME utilisé par le recorder si disponible
+      mediaRecorder.onstop = async () => {
         const actualMimeType = mediaRecorder.mimeType || mimeType || "audio/webm";
         const extension = actualMimeType.includes("mp4") ? "mp4" : "webm";
         const audioBlob = new Blob(chunksRef.current, { type: actualMimeType });
-        const audioFile = new File([audioBlob], `recording.${extension}`, { type: actualMimeType });
-        setSelectedAudio(audioFile);
+        let file = new File([audioBlob], `recording.${extension}`, { type: actualMimeType });
+        // Convertir l'enregistrement en WAV
+        if (!file.name.toLowerCase().endsWith(".wav")) {
+          try {
+            file = await convertToWav(file);
+          } catch (error) {
+            console.error("Erreur lors de la conversion :", error);
+          }
+        }
+        setSelectedAudio(file);
         setTranscription("");
         setLlmResponse("");
         stream.getTracks().forEach((track) => track.stop());
@@ -73,7 +118,6 @@ export default function Home() {
       console.error("Error starting recording:", error);
     }
   };
-  
 
   const stopRecording = () => {
     if (mediaRecorderRef.current) {
@@ -166,7 +210,6 @@ export default function Home() {
         ) : (
           <>
             {/* Interface d'analyse et d'upload/enregistrement */}
-            {/* Prompt Input (affiché uniquement si aucun résultat n'est présent) */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-2 mb-8">
               <label htmlFor="prompt" className="block text-lg font-medium text-gray-300">
                 Quelle instruction d&apos;analyse souhaitez-vous&nbsp;?
