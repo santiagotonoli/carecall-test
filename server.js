@@ -11,6 +11,7 @@ import cors from "cors";
 
 dotenv.config();
 
+const port = process.env.PORT || 3001;
 const app = express();
 app.use(cors({ origin: "*" }));
 
@@ -150,4 +151,8 @@ app.post("/process-audio", upload.single("audio"), async (req, res) => {
     console.error("Erreur lors du traitement:", error);
     res.status(500).json({ error: "Erreur lors du traitement de la requête" });
   }
+});
+
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
 });
