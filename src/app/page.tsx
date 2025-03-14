@@ -112,7 +112,7 @@ export default function Home() {
         console.log("Clé formData :", key);
       }
   
-      const response = await fetch("http://localhost:3001/process-audio", {
+      const response = await fetch("https://carecall-test-fec65391e46a.herokuapp.com/process-audio", {
         method: "POST",
         body: formData,
       });
