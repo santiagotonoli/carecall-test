@@ -18,28 +18,20 @@ export default function Home() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  // Utilisation de useDropzone pour récupérer un fichier audio
+  // Utilisation de useDropzone pour l'import de fichier audio (sans conversion)
   const { getRootProps, getInputProps } = useDropzone({
     accept: { "audio/*": [".mp3", ".wav", ".m4a"] },
-    onDrop: async (acceptedFiles: File[]) => {
+    onDrop: (acceptedFiles: File[]) => {
       if (acceptedFiles.length > 0) {
-        let file = acceptedFiles[0];
-        // Si le fichier n'est pas déjà en WAV, le convertir
-        if (!file.name.toLowerCase().endsWith(".wav")) {
-          try {
-            file = await convertToWav(file);
-          } catch (error) {
-            console.error("Erreur lors de la conversion :", error);
-          }
-        }
-        setSelectedAudio(file);
+        // On enregistre simplement le fichier sans conversion
+        setSelectedAudio(acceptedFiles[0]);
         setTranscription("");
         setLlmResponse("");
       }
     },
   });
 
-  // Création d'une URL pour l'aperçu de l'audio
+  // Met à jour l'URL pour l'aperçu audio
   useEffect(() => {
     if (selectedAudio) {
       const url = URL.createObjectURL(selectedAudio);
@@ -50,36 +42,7 @@ export default function Home() {
     }
   }, [selectedAudio]);
 
-  // Fonction qui charge FFmpeg WASM dynamiquement (exécuté uniquement côté client)
-  const loadFFmpeg = async () => {
-    // Import dynamique pour éviter l'import statique durant le build/prérendu
-    const ffmpegModule = await import("@ffmpeg/ffmpeg");
-    // Utilisation de 'as any' pour contourner les problèmes de typage
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { createFFmpeg, fetchFile } = ffmpegModule as any;
-    const ffmpeg = createFFmpeg({ log: true });
-    if (!ffmpeg.isLoaded()) {
-      await ffmpeg.load();
-    }
-    return { ffmpeg, fetchFile };
-  };
-
-  // Fonction pour convertir un fichier audio en WAV PCM 16kHz mono
-  const convertToWav = async (file: File): Promise<File> => {
-    const { ffmpeg, fetchFile } = await loadFFmpeg();
-    // Écrire le fichier d'entrée dans l'espace de fichiers virtuel de FFmpeg
-    ffmpeg.FS("writeFile", "input", await fetchFile(file));
-    // Exécuter la commande de conversion
-    await ffmpeg.run("-i", "input", "-ar", "16000", "-ac", "1", "-f", "wav", "-acodec", "pcm_s16le", "output.wav");
-    // Lire le fichier converti
-    const data = ffmpeg.FS("readFile", "output.wav");
-    // Optionnel : supprimer les fichiers de l'espace virtuel
-    ffmpeg.FS("unlink", "input");
-    ffmpeg.FS("unlink", "output.wav");
-    // Créer un nouvel objet File pour le fichier WAV converti
-    return new File([data.buffer], "output.wav", { type: "audio/wav" });
-  };
-
+  // Fonction d'enregistrement audio
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -95,19 +58,12 @@ export default function Home() {
       mediaRecorder.ondataavailable = (e) => {
         chunksRef.current.push(e.data);
       };
-      mediaRecorder.onstop = async () => {
+      mediaRecorder.onstop = () => {
         const actualMimeType = mediaRecorder.mimeType || mimeType || "audio/webm";
         const extension = actualMimeType.includes("mp4") ? "mp4" : "webm";
         const audioBlob = new Blob(chunksRef.current, { type: actualMimeType });
-        let file = new File([audioBlob], `recording.${extension}`, { type: actualMimeType });
-        // Convertir l'enregistrement en WAV
-        if (!file.name.toLowerCase().endsWith(".wav")) {
-          try {
-            file = await convertToWav(file);
-          } catch (error) {
-            console.error("Erreur lors de la conversion :", error);
-          }
-        }
+        // Créer un File à partir de l'enregistrement
+        const file = new File([audioBlob], `recording.${extension}`, { type: actualMimeType });
         setSelectedAudio(file);
         setTranscription("");
         setLlmResponse("");
@@ -137,7 +93,9 @@ export default function Home() {
     setIsLoading(false);
   };
 
+  // Fonction qui envoie le fichier audio et le prompt à votre backend
   const processAudio = async () => {
+    console.log("Début du traitement de l'audio...");
     if (!prompt.trim()) {
       alert("Veuillez renseigner une instruction d'analyse avant de continuer.");
       return;
@@ -148,26 +106,46 @@ export default function Home() {
       const formData = new FormData();
       formData.append("audio", selectedAudio);
       formData.append("prompt", prompt);
-      const response = await fetch("/api/process-audio", {
+  
+      // Log des clés du formData pour s'assurer que tout est présent
+      for (const key of formData.keys()) {
+        console.log("Clé formData :", key);
+      }
+  
+      const response = await fetch("http://localhost:3001/process-audio", {
         method: "POST",
         body: formData,
       });
+  
+      console.log("Statut de la réponse fetch :", response.status);
       if (!response.ok) {
-        throw new Error("Erreur lors de l'analyse");
+        const errorText = await response.text();
+        console.error("Texte d'erreur de la réponse :", errorText);
+        throw new Error("Erreur lors de l'analyse: " + errorText);
       }
+  
       const data = await response.json();
+      console.log("Données reçues :", data);
+  
+      if (data.error) {
+        throw new Error(data.error);
+      }
+  
       setTranscription(data.transcription);
       setLlmResponse(data.llmResponse);
       setShowResults(true);
       setSelectedAudio(null);
-    } catch (error) {
-      console.error("Erreur lors de l'analyse de l'audio:", error);
-      alert("Une erreur est survenue lors de l'analyse de l'audio.");
+    } catch (error: unknown) {
+      console.error("Erreur lors de l'analyse de l'audio :", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert("Une erreur est survenue lors de l'analyse de l'audio: " + errorMessage);
       resetPage();
     } finally {
       setIsLoading(false);
     }
   };
+  
+  
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-black via-gray-900 to-blue-900 text-white">
@@ -185,12 +163,10 @@ export default function Home() {
           </motion.div>
         </div>
       </div>
-
       <main className="max-w-4xl mx-auto px-4 py-12">
         {showResults ? (
-          // Affichage de la grande card des résultats
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="relative bg-gray-800/40 p-6 rounded-xl shadow-lg">
-            {/* Bouton de réinitialisation (petite croix en haut à droite) */}
+            {/* Bouton de réinitialisation */}
             <button onClick={resetPage} className="absolute top-4 right-4 text-gray-300 hover:text-white">
               <FaTimes />
             </button>
@@ -210,7 +186,7 @@ export default function Home() {
           </motion.div>
         ) : (
           <>
-            {/* Interface d&apos;analyse et d&apos;upload/enregistrement */}
+            {/* Section pour le prompt */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-2 mb-8">
               <label htmlFor="prompt" className="block text-lg font-medium text-gray-300">
                 Quelle instruction d&apos;analyse souhaitez-vous&nbsp;?
@@ -220,11 +196,10 @@ export default function Home() {
                 type="text"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Ex&nbsp;: Résume en 3 phrases"
+                placeholder="Ex : Résume en 3 phrases"
                 className="w-full p-4 rounded-xl bg-gray-800/50 border border-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               />
             </motion.div>
-
             {/* Tab Bar */}
             <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex rounded-lg overflow-hidden mb-6 bg-gray-800/30 p-1">
               <button
@@ -240,8 +215,7 @@ export default function Home() {
                 <FaMicrophone className="inline mr-2" /> Enregistrer
               </button>
             </motion.div>
-
-            {/* Zone d&apos;interaction selon l&apos;onglet */}
+            {/* Zone d'interaction selon l'onglet */}
             <AnimatePresence mode="wait">
               <motion.div key={activeTab} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
                 {selectedAudio ? (
